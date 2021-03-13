@@ -75,6 +75,10 @@ public:
     virtual void invertDisplay(boolean invert);
 
     void drawImage(uint16_t x1, uint16_t y1, uint16_t width, uint16_t height, uint16_t* img);
+    
+    // draw pic into the given area. 
+    // rotating picture buffer according to rotation (0 == 0 degrees, 1 = 90 degrees, 2 = 180 degrees, 3 = 270 degrees)
+    void drawImageTransposed(uint16_t x1, uint16_t y1, uint16_t width, uint16_t height, int rotation, uint16_t *img);
 
 private:
     SPIClass& _spi;

@@ -170,3 +170,9 @@ void Sipeed_ST7789::drawImage(uint16_t x1, uint16_t y1, uint16_t width, uint16_t
     lcd_draw_picture(x1, y1, width, height, img);
 }
 
+void Sipeed_ST7789::drawImageTransposed(uint16_t x1, uint16_t y1, uint16_t width, uint16_t height, int rotation, uint16_t *img) 
+{
+    configASSERT(img!=nullptr || img!=0);
+
+    lcd_draw_pic_transposed(x1, y1, width, height, rotation, img);
+}

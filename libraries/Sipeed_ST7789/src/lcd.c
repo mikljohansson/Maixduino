@@ -229,6 +229,48 @@ void lcd_draw_picture(uint16_t x1, uint16_t y1, uint16_t width, uint16_t height,
     tft_write_word((uint32_t*)g_lcd_display_buff, width * height / 2);
 }
 
+static inline uint16_t read_transposed(uint16_t x, uint16_t y, uint16_t width, uint16_t height, int rotation, uint16_t *ptr) {
+    switch (rotation) {
+        case 0:
+            return *(ptr + (x) + width * (y));
+
+        case 1:
+            return *(ptr + (y) + width * (height - x - 1));
+
+        case 2:
+            return *(ptr + (width - x - 1) + width * (height - y - 1));
+
+        case 3:
+            return *(ptr + (width - y - 1) + width * (x));
+    }
+}
+
+// draw pic into the given area. 
+// rotating picture buffer according to rotation (0 == 0 degrees, 1 = 90 degrees, 2 = 180 degrees, 3 = 270 degrees)
+void lcd_draw_pic_transposed(uint16_t x1, uint16_t y1, uint16_t width, uint16_t height, int rotation, uint16_t *ptr)
+{
+    uint32_t i;
+    uint16_t x, y;
+    uint16_t *p = 0;
+    uint16_t pix;
+    uint16_t target_width = (rotation == 1 || rotation == 3) ? height : width;
+    uint16_t target_height = (rotation == 1 || rotation == 3) ? width : height;
+
+    lcd_set_area(x1, y1, x1 + target_width - 1, y1 + target_height - 1);
+    for (i = 0, y = 0; y < target_height; y++)
+    {
+        for (x = 0; x < target_width; x += 2, i += 2)
+        {
+            pix = read_transposed((x + 1) % width, y + x / width, width, height, rotation, ptr);
+            g_lcd_display_buff[i] = SWAP_16(pix);
+            
+            pix = read_transposed(x, y, width, height, rotation, ptr);
+            g_lcd_display_buff[i + 1] = SWAP_16(pix);
+        }
+    }
+    tft_write_word((uint32_t*)g_lcd_display_buff, width * height / 2);
+}
+
 //draw pic's roi on (x,y)
 //x,y of LCD, w,h is pic; rx,ry,rw,rh is roi
 void lcd_draw_pic_roi(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t rx, uint16_t ry, uint16_t rw, uint16_t rh, uint32_t *ptr)
