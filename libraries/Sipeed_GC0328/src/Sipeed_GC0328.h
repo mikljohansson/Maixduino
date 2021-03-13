@@ -51,8 +51,8 @@ public:
     virtual uint8_t* getRGB888(){ return _aiBuffer; };
     virtual void setRotation(uint8_t rotation);
     virtual void setInvert(bool invert);
+    virtual void setFlip(bool flip);
     virtual void shutdown(bool enable);
-    void setFlip(bool flip);
 
 private:
     uint8_t* _dataBuffer;    // put RGB565 data
