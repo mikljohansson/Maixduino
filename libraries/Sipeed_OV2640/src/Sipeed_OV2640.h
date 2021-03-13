@@ -41,8 +41,9 @@ public:
     ~Sipeed_OV2640();
     
     virtual bool begin();
+    bool begin(bool binocular);
     virtual void end();
-    bool reset();
+    bool reset(bool binocular = false);
     bool setPixFormat(pixformat_t pixFormat);
     bool setFrameSize(framesize_t frameSize);
     virtual bool run(bool run);
@@ -56,6 +57,8 @@ public:
     virtual uint8_t* getRGB888(){ return _aiBuffer; };
     virtual void setRotation(uint8_t rotation);
     virtual void setInvert(bool invert);
+    virtual void setFlip(bool flip);
+    virtual void shutdown(bool enable);
 
 private:
     uint8_t* _dataBuffer;    // put RGB565 data

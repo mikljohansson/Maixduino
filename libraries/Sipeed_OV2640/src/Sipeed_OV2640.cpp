@@ -37,6 +37,7 @@ typedef enum {
 
 #define UXGA_HSIZE     (1600)
 #define UXGA_VSIZE     (1200)
+
 static const uint8_t ov2640_default[][2] = { //k210 
 	{0xff, 0x01},
 	{0x12, 0x80},
@@ -103,7 +104,6 @@ static const uint8_t ov2640_default[][2] = { //k210
 	{0x4c, 0x00},
 	{0x87, 0xd5},
 	{0x88, 0x3f},
-	{0xd7, 0x03},//[pixformat]:
 	{0xd9, 0x10},
 	{0xd3, 0x82},
 	{0xc8, 0x08},
@@ -162,7 +162,7 @@ static const uint8_t ov2640_default[][2] = { //k210
 	{0x97, 0x80},
 	{0x97, 0x00},
 	{0x97, 0x00},
-	{0xc3, 0xed},
+	{0xc3, 0xef},
 	{0xa4, 0x00},
 	{0xa8, 0x00},
 	{0xc5, 0x11},
@@ -185,16 +185,20 @@ static const uint8_t ov2640_default[][2] = { //k210
 	{0x5c, 0x00},
 	{0xc3, 0xed},
 	{0x7f, 0x00},
-	{0xda, 0x08},//pixformat
 	{0xe5, 0x1f},
-	{0xe1, 0x67},//pixformat
-	{0xe0, 0x00},
 	{0xdd, 0x7f},
 	{0x05, 0x00},
 #if 1	//color bar
 	{0xff, 0x01},
 	{0x12, 0x02},
 #endif
+    { BANK_SEL, BANK_SEL_DSP },
+    { RESET,   RESET_DVP},
+    { 0xC2,    0x0C},
+    { 0xD7,     0x01 },
+    { 0xDA,  0x01 },
+    { 0xE1,     0x67 },
+    { RESET,    0x00 },
 	{0x00, 0x00}
 
 };
@@ -626,6 +630,11 @@ Sipeed_OV2640::~Sipeed_OV2640()
 
 bool Sipeed_OV2640::begin()
 {
+    return begin(false);
+}
+
+bool Sipeed_OV2640::begin(bool binocular)
+{
     if(_dataBuffer)
         free(_dataBuffer);
     if(_aiBuffer)
@@ -645,12 +654,32 @@ bool Sipeed_OV2640::begin()
         free(_dataBuffer);
         return false;
     }
-    if(!reset())
+
+    if(!reset(binocular))
         return false;
-    if( !setPixFormat(_pixFormat))
-        return false;
-    if(!setFrameSize(_frameSize))
-        return false;
+    
+    if(binocular) {
+        // Configure sensor 0
+        shutdown(true);
+        if(!setPixFormat(_pixFormat))
+            return false;
+        if(!setFrameSize(_frameSize))
+            return false; 
+
+        // Configure sensor 1
+        shutdown(false);
+        if(!setPixFormat(_pixFormat))
+            return false;
+        if(!setFrameSize(_frameSize))
+            return false; 
+    }
+    else {
+        if(!setPixFormat(_pixFormat))
+            return false;
+        if(!setFrameSize(_frameSize))
+            return false; 
+    }
+
     return true;
 }
 
@@ -664,12 +693,37 @@ void Sipeed_OV2640::end()
     _aiBuffer   = nullptr;
 }
 
-bool Sipeed_OV2640::reset()
+bool Sipeed_OV2640::reset(bool binocular)
 {
     if(dvpInit() != 0)
         return false;
-    if(ov2640_reset() != 0)
-        return false;
+    
+    if(binocular)
+    {
+        // Reset sensor 0
+        shutdown(true);
+        DCMI_RESET_LOW();
+        delay(10);
+        DCMI_RESET_HIGH();
+        delay(10);
+        if(ov2640_reset() != 0)
+            return false;
+
+        // Reset sensor 1
+        shutdown(false);
+        delay(10);
+        DCMI_RESET_LOW();
+        delay(10);
+        DCMI_RESET_HIGH();
+        delay(10);
+        if(ov2640_reset() != 0)
+            return false;
+    }
+    else {
+        if(ov2640_reset() != 0)
+            return false;
+    }
+    
     if(dvpInitIrq() != 0)
         return false;
     return true;
@@ -728,13 +782,27 @@ void Sipeed_OV2640::setRotation(uint8_t rotation)
 
 void Sipeed_OV2640::setInvert(bool invert)
 {
-    //FIXME
-    ov2640_set_hmirror(!invert); 
-    //ov2640_set_vflip(1);
-    return;
+    ov2640_set_hmirror(!invert);
 }
 
+void Sipeed_OV2640::setFlip(bool flip)
+{
+    ov2640_set_vflip(flip);
+}
 
+void Sipeed_OV2640::shutdown(bool enable)
+{
+    if (enable)
+    {
+        DCMI_PWDN_HIGH();
+    }
+    else
+    {
+        DCMI_PWDN_LOW();
+    }
+
+    delay(10);
+}
 
 int Sipeed_OV2640::dvpInit(uint32_t freq)
 {
