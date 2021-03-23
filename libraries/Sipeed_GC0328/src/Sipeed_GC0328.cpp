@@ -11,6 +11,15 @@
 #include "plic.h"
 #include "Arduino.h" // millis
 #include "stdio.h"
+#include "iomem.h"
+
+#if FIX_CACHE
+#define DVP_MALLOC	iomem_malloc
+#define DVP_FREE	iomem_free
+#else
+#define DVP_MALLOC	malloc
+#define DVP_FREE	free
+#endif
 
 volatile static uint8_t g_dvp_finish_flag = 0;
 
@@ -881,22 +890,22 @@ bool Sipeed_GC0328::begin()
 bool Sipeed_GC0328::begin(bool binocular)
 {    
     if(_dataBuffer)
-        free(_dataBuffer);
+        DVP_FREE(_dataBuffer);
     if(_aiBuffer)
-        free(_aiBuffer);
-    _dataBuffer = (uint8_t*)malloc(_width*_height*2); //RGB565
+        DVP_FREE(_aiBuffer);
+    _dataBuffer = (uint8_t*)DVP_MALLOC(_width*_height*2); //RGB565
     if(!_dataBuffer)
     {
         _width = 0;
         _height = 0;
         return false;
     }
-    _aiBuffer = (uint8_t*)malloc(_width*_height*3);   //RGB888
+    _aiBuffer = (uint8_t*)DVP_MALLOC(_width*_height*3);   //RGB888
     if(!_aiBuffer)
     {
         _width = 0;
         _height = 0;
-        free(_dataBuffer);
+        DVP_FREE(_dataBuffer);
         return false;
     }
     if(!reset(binocular))
@@ -930,9 +939,9 @@ bool Sipeed_GC0328::begin(bool binocular)
 void Sipeed_GC0328::end()
 {
     if(_dataBuffer)
-        free(_dataBuffer);
+        DVP_FREE(_dataBuffer);
     if(_aiBuffer)
-        free(_aiBuffer);
+        DVP_FREE(_aiBuffer);
     _dataBuffer = nullptr;
     _aiBuffer   = nullptr;
 }
@@ -1240,6 +1249,10 @@ int Sipeed_GC0328::gc0328_reset()
         if(_debug && reg_data != sensor_default_regs[index][1])
             Serial.printf("%d, %#x, %#x, %#x\r\n", index, sensor_default_regs[index][0], sensor_default_regs[index][1], reg_data);//debug
     }
+
+    /* Initialize the DSP */
+	gc0328_set_framesize(_frameSize);
+	gc0328_set_pixformat(_pixFormat);
     return 0;
 }
 

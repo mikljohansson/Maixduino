@@ -11,7 +11,16 @@
 #include "utils.h"
 #include "plic.h"
 #include "math.h"
+#include "iomem.h"
 #include "Arduino.h" // millis
+
+#if FIX_CACHE
+#define DVP_MALLOC	iomem_malloc
+#define DVP_FREE	iomem_free
+#else
+#define DVP_MALLOC	malloc
+#define DVP_FREE	free
+#endif
 
 volatile static uint8_t g_dvp_finish_flag = 0;
 
@@ -52,6 +61,9 @@ typedef enum {
 
 #define QQVGA_WIDTH	160
 #define QQVGA_HEIGHT	120
+
+#define HQVGA_WIDTH	    240
+#define HQVGA_HEIGHT	160
 
 #define QVGA_WIDTH	320
 #define QVGA_HEIGHT	240
@@ -293,6 +305,16 @@ static const uint8_t ov2640_qcif_regs[][2] = {
 	ENDMARKER,
 };
 
+static const uint8_t ov2640_qqvga_regs[][2] = {
+	PER_SIZE_REG_SEQ(QQVGA_WIDTH, QQVGA_HEIGHT, 3, 3, 4),
+	ENDMARKER,
+};
+
+static const uint8_t ov2640_hqvga_regs[][2] = {
+	PER_SIZE_REG_SEQ(HQVGA_WIDTH, HQVGA_HEIGHT, 2, 2, 4),
+	ENDMARKER,
+};
+
 static const uint8_t ov2640_qvga_regs[][2] = {
 	PER_SIZE_REG_SEQ(QVGA_WIDTH, QVGA_HEIGHT, 2, 2, 4),
 	ENDMARKER,
@@ -399,20 +421,8 @@ static const uint8_t saturation_regs[NUM_SATURATION_LEVELS + 1][5] = {
 
 
 
-Sipeed_OV2640::Sipeed_OV2640( framesize_t frameSize, pixformat_t pixFormat)
+Sipeed_OV2640::Sipeed_OV2640(framesize_t frameSize, pixformat_t pixFormat)
 :Camera(frameSize, pixFormat),
-_dataBuffer(NULL), _aiBuffer(NULL),
-_resetPoliraty(ACTIVE_HIGH), _pwdnPoliraty(ACTIVE_HIGH),
-_slaveAddr(0x00),
-_id(0)
-{
-    configASSERT(pixFormat == PIXFORMAT_RGB565 || pixFormat==PIXFORMAT_YUV422);
-}
-
-
-
-Sipeed_OV2640::Sipeed_OV2640(uint16_t width, uint16_t height, pixformat_t pixFormat)
-:Camera(width, height, pixFormat),
 _dataBuffer(NULL), _aiBuffer(NULL),
 _resetPoliraty(ACTIVE_HIGH), _pwdnPoliraty(ACTIVE_HIGH),
 _slaveAddr(0x00),
@@ -435,22 +445,22 @@ bool Sipeed_OV2640::begin()
 bool Sipeed_OV2640::begin(bool binocular)
 {
     if(_dataBuffer)
-        free(_dataBuffer);
+        DVP_FREE(_dataBuffer);
     if(_aiBuffer)
-        free(_aiBuffer);
-    _dataBuffer = (uint8_t*)malloc(_width*_height*2); //RGB565
+        DVP_FREE(_aiBuffer);
+    _dataBuffer = (uint8_t*)DVP_MALLOC(_width*_height*2); //RGB565
     if(!_dataBuffer)
     {
         _width = 0;
         _height = 0;
         return false;
     }
-    _aiBuffer = (uint8_t*)malloc(_width*_height*3);   //RGB888
+    _aiBuffer = (uint8_t*)DVP_MALLOC(_width*_height*3);   //RGB888
     if(!_aiBuffer)
     {
         _width = 0;
         _height = 0;
-        free(_dataBuffer);
+        DVP_FREE(_dataBuffer);
         return false;
     }
 
@@ -460,34 +470,39 @@ bool Sipeed_OV2640::begin(bool binocular)
     if(binocular) {
         // Configure sensor 0
         shutdown(true);
-        if(!setPixFormat(_pixFormat))
+        if (!configure())
             return false;
-        if(!setFrameSize(_frameSize))
-            return false; 
 
         // Configure sensor 1
         shutdown(false);
-        if(!setPixFormat(_pixFormat))
+        if (!configure())
             return false;
-        if(!setFrameSize(_frameSize))
-            return false; 
     }
-    else {
-        if(!setPixFormat(_pixFormat))
-            return false;
-        if(!setFrameSize(_frameSize))
-            return false; 
-    }
+    else if (!configure())
+        return false;
 
+    return true;
+}
+
+bool Sipeed_OV2640::configure() 
+{
+    if(ov2640_set_framesize(_frameSize, _width, _height) < 0)
+        return false; 
+    if(ov2640_set_pixformat(_pixFormat) < 0)
+        return false;
+    if(ov2640_set_hmirror(_invert) < 0)
+        return false;
+    if(ov2640_set_vflip(_flip) < 0)
+        return false;
     return true;
 }
 
 void Sipeed_OV2640::end()
 {
     if(_dataBuffer)
-        free(_dataBuffer);
+        DVP_FREE(_dataBuffer);
     if(_aiBuffer)
-        free(_aiBuffer);
+        DVP_FREE(_aiBuffer);
     _dataBuffer = nullptr;
     _aiBuffer   = nullptr;
 }
@@ -528,20 +543,6 @@ bool Sipeed_OV2640::reset(bool binocular)
     return true;
 }
 
-bool Sipeed_OV2640::setPixFormat(pixformat_t pixFormat)
-{
-    if(ov2640_set_pixformat(pixFormat) != 0)
-        return false;
-    return true;
-}
-
-bool Sipeed_OV2640::setFrameSize(framesize_t frameSize)
-{
-    if(ov2640_set_framesize(frameSize) != 0)
-        return false;
-    return true;
-}  
-
 bool Sipeed_OV2640::run(bool run)
 {
 	if(run)
@@ -581,12 +582,12 @@ void Sipeed_OV2640::setRotation(uint8_t rotation)
 
 void Sipeed_OV2640::setInvert(bool invert)
 {
-    ov2640_set_hmirror(!invert);
+    _invert = invert;
 }
 
 void Sipeed_OV2640::setFlip(bool flip)
 {
-    ov2640_set_vflip(flip);
+    _flip = flip;
 }
 
 void Sipeed_OV2640::shutdown(bool enable)
@@ -895,13 +896,6 @@ int Sipeed_OV2640::ov2640_reset()
         cambus_writeb(_slaveAddr, regs[i][0], regs[i][1]);
         i++;
     }
-    i = 0;
-    regs = ov2640_svga_regs;
-    /* Write DSP input regsiters */
-    while (regs[i][0]) {
-        cambus_writeb(_slaveAddr, regs[i][0], regs[i][1]);
-        i++;
-    }
 
     return 0;
 }
@@ -969,54 +963,65 @@ int Sipeed_OV2640::ov2640_set_pixformat(pixformat_t pixformat)
     return 0;
 }
 
-int Sipeed_OV2640::ov2640_set_framesize(framesize_t framesize)
+int Sipeed_OV2640::ov2640_set_framesize(framesize_t framesize, int w, int h)
 {
     int ret=0;
-    uint8_t clkrc;
-    uint16_t w = _width;
-    uint16_t h = _height;
-
     const uint8_t (*regs)[2];
 
-    if ((w <= 800) && (h <= 600)) {
-        clkrc =0x80;
-        regs = ov2640_svga_regs;
-    } else {
-        clkrc =0x81;
-        regs = ov2640_uxga_regs;
+    switch (framesize) {
+        case FRAMESIZE_QCIF:
+            regs = ov2640_qcif_regs;
+            break;
+
+        case FRAMESIZE_QQVGA:
+            regs = ov2640_qqvga_regs;
+            break;
+
+        case FRAMESIZE_HQVGA:
+            regs = ov2640_hqvga_regs;
+            break;
+
+        case FRAMESIZE_QVGA:
+            regs = ov2640_qvga_regs;
+            break;
+
+        case FRAMESIZE_CIF:
+            regs = ov2640_cif_regs;
+            break;
+
+        case FRAMESIZE_VGA:
+            regs = ov2640_vga_regs;
+            break;
+
+        case FRAMESIZE_SVGA:
+            regs = ov2640_svga_regs;
+            break;
+
+        case FRAMESIZE_XGA:
+            regs = ov2640_xga_regs;
+            break;
+
+        case FRAMESIZE_SXGA:
+            regs = ov2640_sxga_regs;
+            break;
+
+        case FRAMESIZE_UXGA:
+            regs = ov2640_uxga_regs;
+            break;
+
+        default:
+            return -1;
     }
-
-    /* Disable DSP */
-    ret |= cambus_writeb(_slaveAddr, BANK_SEL, BANK_SEL_DSP);
-    ret |= cambus_writeb(_slaveAddr, R_BYPASS, R_BYPASS_DSP_BYPAS);
-
-    /* Set CLKRC */
-	if(clkrc == 0x81)
-	{
-	    ret |= cambus_writeb(_slaveAddr, BANK_SEL, BANK_SEL_SENS);
-	    ret |= cambus_writeb(_slaveAddr, CLKRC, clkrc);
-	}
 
     /* Write DSP preamble regsiters */
     for (int i = 0; ov2640_size_change_preamble_regs[i][0]; i++) {
-        cambus_writeb(_slaveAddr, ov2640_size_change_preamble_regs[i][0], ov2640_size_change_preamble_regs[i][1]);
+        ret |= cambus_writeb(_slaveAddr, ov2640_size_change_preamble_regs[i][0], ov2640_size_change_preamble_regs[i][1]);
     }
 
     /* Write DSP input regsiters */
     for (int i = 0; regs[i][0]; i++) {
-        cambus_writeb(_slaveAddr, regs[i][0], regs[i][1]);
+        ret |= cambus_writeb(_slaveAddr, regs[i][0], regs[i][1]);
     }
-
-	 /* Write output width */
-	ret |= cambus_writeb(_slaveAddr,0xe0,0x04 ); /* OUTH[8]/OUTW[9:8] */
-    ret |= cambus_writeb(_slaveAddr, ZMOW, (w>>2)&0xFF); /* OUTW[7:0] (real/4) */
-    ret |= cambus_writeb(_slaveAddr, ZMOH, (h>>2)&0xFF); /* OUTH[7:0] (real/4) */
-    ret |= cambus_writeb(_slaveAddr, ZMHH, ((h>>8)&0x04)|((w>>10)&0x03)); /* OUTH[8]/OUTW[9:8] */
-	ret |= cambus_writeb(_slaveAddr,0xe0,0x00 ); /* OUTH[8]/OUTW[9:8] */
-
-    /* Enable DSP */
-    ret |= cambus_writeb(_slaveAddr, BANK_SEL, BANK_SEL_DSP);
-    ret |= cambus_writeb(_slaveAddr, R_BYPASS, R_BYPASS_USE_DSP);
 
     /* delay n ms */
     msleep(30);

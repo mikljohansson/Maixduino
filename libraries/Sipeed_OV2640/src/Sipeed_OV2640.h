@@ -37,15 +37,11 @@ class Sipeed_OV2640 : public Camera{
 
 public:
     Sipeed_OV2640(framesize_t frameSize = FRAMESIZE_QVGA, pixformat_t pixFormat = PIXFORMAT_RGB565);
-    Sipeed_OV2640(uint16_t width, uint16_t height, pixformat_t pixFormat = PIXFORMAT_RGB565);
     ~Sipeed_OV2640();
     
     virtual bool begin();
     bool begin(bool binocular);
     virtual void end();
-    bool reset(bool binocular = false);
-    bool setPixFormat(pixformat_t pixFormat);
-    bool setFrameSize(framesize_t frameSize);
     virtual bool run(bool run);
     virtual int id();
     /**
@@ -68,6 +64,11 @@ private:
     uint8_t  _slaveAddr;     // camera address
     uint8_t  _id;
     uint32_t _freq;
+    bool     _invert;
+    bool     _flip;
+
+    bool reset(bool binocular = false);
+    bool configure();
 
     int dvpInit(uint32_t freq = 24000000);
     int dvpInitIrq();
@@ -90,8 +91,9 @@ private:
     int ov2640_write_reg(uint8_t reg_addr, uint8_t reg_data);
 
     int ov2640_set_pixformat(pixformat_t pixformat);
-    int ov2640_set_framesize(framesize_t framesize);
+    int ov2640_set_framesize(framesize_t framesize, int w, int h);
     int ov2640_set_framerate(framerate_t framerate);
+    int ov2640_set_windowing(int x, int y, int w, int h);
     int ov2640_set_contrast(int level);
     int ov2640_set_brightness(int level);
     int ov2640_set_saturation(int level);
